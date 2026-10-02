@@ -113,11 +113,11 @@
     <camera
         name="workspace_camera"
         mode="targetbody"
-        target="base"
-        pos="0.85 -0.85 0.75"
-        fovy="55"/>
+        target="cube"
+        pos="0.85 -0.85 1.15"
+        fovy="60"/>
 
-    <body name="cube" pos="0.30 0 0.06">
+    <body name="cube" pos="0.7 0 0.06">
         <freejoint/>
         <geom
             name="cube_geom"
