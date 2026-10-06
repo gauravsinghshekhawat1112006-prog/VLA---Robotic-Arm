@@ -17,14 +17,58 @@ MODEL_PATH = r"C:\mujoco_menagerie\universal_robots_ur5e\vla_scene.xml"
 # SETTINGS
 # =========================================================
 
-TARGET_SPEED = 0.08       # meters/second
-IK_GAIN = 6.0             # IK correction strength
-DAMPING = 0.05
-MAX_JOINT_SPEED = 0.60    # rad/second
+# Speed of the RED TARGET DOT
+TARGET_SPEED = 0.06       # meters / second
+
+# IK response
+IK_GAIN = 5.0
+
+# Damped IK
+DAMPING = 0.06
+
+# Maximum joint speed
+MAX_JOINT_SPEED = 0.35   # rad / second
+
+# Joystick deadzone
 DEADZONE = 0.06
 
+# Gripper
 GRIPPER_OPEN = 0.0
 GRIPPER_CLOSED = 255.0
+
+
+# =========================================================
+# STARTING POSE
+# =========================================================
+#
+# Upright configuration.
+# Gripper should point approximately downward.
+#
+
+START_Q = np.array(
+    [
+        0.0,       # shoulder pan
+        -1.20,     # shoulder lift
+        1.65,      # elbow
+        -2.02,     # wrist 1
+        -1.57,     # wrist 2
+        0.0        # wrist 3
+    ],
+    dtype=np.float64
+)
+
+
+# =========================================================
+# CUBE RANDOM RANGE
+# =========================================================
+
+CUBE_X_MIN = 0.25
+CUBE_X_MAX = 0.55
+
+CUBE_Y_MIN = -0.30
+CUBE_Y_MAX = 0.30
+
+CUBE_Z = 0.06
 
 
 # =========================================================
@@ -33,10 +77,11 @@ GRIPPER_CLOSED = 255.0
 
 print("Loading model...")
 
-model = mujoco.MjModel.from_xml_path(MODEL_PATH)
-data = mujoco.MjData(model)
+model = mujoco.MjModel.from_xml_path(
+    MODEL_PATH
+)
 
-mujoco.mj_forward(model, data)
+data = mujoco.MjData(model)
 
 print("Model loaded successfully!")
 
@@ -46,37 +91,43 @@ print("Model loaded successfully!")
 # =========================================================
 
 def find_joint(name):
-    jid = mujoco.mj_name2id(
+
+    joint_id = mujoco.mj_name2id(
         model,
         mujoco.mjtObj.mjOBJ_JOINT,
         name
     )
 
-    if jid < 0:
+    if joint_id < 0:
         raise RuntimeError(
             f"Joint not found: {name}"
         )
 
-    return jid
+    return joint_id
 
 
 def find_actuator(name):
-    aid = mujoco.mj_name2id(
+
+    actuator_id = mujoco.mj_name2id(
         model,
         mujoco.mjtObj.mjOBJ_ACTUATOR,
         name
     )
 
-    if aid < 0:
+    if actuator_id < 0:
         raise RuntimeError(
             f"Actuator not found: {name}"
         )
 
-    return aid
+    return actuator_id
 
 
 def clamp(value, low, high):
-    return max(low, min(high, value))
+
+    return max(
+        low,
+        min(high, value)
+    )
 
 
 # =========================================================
@@ -84,36 +135,43 @@ def clamp(value, low, high):
 # =========================================================
 
 joint_names = [
+
     "shoulder_pan_joint",
     "shoulder_lift_joint",
     "elbow_joint",
     "wrist_1_joint",
     "wrist_2_joint",
     "wrist_3_joint"
+
 ]
 
+
 actuator_names = [
+
     "shoulder_pan",
     "shoulder_lift",
     "elbow",
     "wrist_1",
     "wrist_2",
     "wrist_3"
+
 ]
+
 
 joint_ids = [
+
     find_joint(name)
     for name in joint_names
+
 ]
+
 
 arm_actuators = [
+
     find_actuator(name)
     for name in actuator_names
+
 ]
-
-
-print("Joint IDs:", joint_ids)
-print("Actuator IDs:", arm_actuators)
 
 
 # =========================================================
@@ -123,8 +181,6 @@ print("Actuator IDs:", arm_actuators)
 gripper_actuator = find_actuator(
     "gripper_fingers_actuator"
 )
-
-print("Gripper actuator:", gripper_actuator)
 
 
 # =========================================================
@@ -138,54 +194,38 @@ pinch_site = mujoco.mj_name2id(
 )
 
 if pinch_site < 0:
+
     raise RuntimeError(
         "gripper_pinch site not found!"
     )
 
-print("Gripper pinch site:", pinch_site)
-
 
 # =========================================================
-# MAKE PINCH SITE VISIBLE
+# JOINT ADDRESSES
 # =========================================================
 
-# Make it a visible sphere
-model.site_type[pinch_site] = (
-    mujoco.mjtGeom.mjGEOM_SPHERE
+qpos_addr = np.array(
+
+    [
+        model.jnt_qposadr[j]
+        for j in joint_ids
+    ],
+
+    dtype=np.int32
+
 )
 
-# Radius
-model.site_size[pinch_site] = np.array([
-    0.025,
-    0.025,
-    0.025
-])
 
-# Bright red
-model.site_rgba[pinch_site] = np.array([
-    1.0,
-    0.0,
-    0.0,
-    1.0
-])
+dof_addr = np.array(
 
-# Put it in the always-visible site group
-model.site_group[pinch_site] = 0
+    [
+        model.jnt_dofadr[j]
+        for j in joint_ids
+    ],
 
+    dtype=np.int32
 
-# =========================================================
-# QPOS / DOF ADDRESSES
-# =========================================================
-
-qpos_addr = np.array([
-    model.jnt_qposadr[j]
-    for j in joint_ids
-])
-
-dof_addr = np.array([
-    model.jnt_dofadr[j]
-    for j in joint_ids
-])
+)
 
 
 # =========================================================
@@ -199,6 +239,7 @@ cube_body = mujoco.mj_name2id(
 )
 
 if cube_body < 0:
+
     raise RuntimeError(
         "Cube body not found!"
     )
@@ -213,22 +254,34 @@ cube_joint = -1
 for j in range(model.njnt):
 
     if (
+
         model.jnt_bodyid[j] == cube_body
+
         and
-        model.jnt_type[j] == mujoco.mjtJoint.mjJNT_FREE
+
+        model.jnt_type[j]
+        == mujoco.mjtJoint.mjJNT_FREE
+
     ):
+
         cube_joint = j
         break
 
 
 if cube_joint < 0:
+
     raise RuntimeError(
         "Cube free joint not found!"
     )
 
 
-cube_qpos = model.jnt_qposadr[cube_joint]
-cube_dof = model.jnt_dofadr[cube_joint]
+cube_qpos = model.jnt_qposadr[
+    cube_joint
+]
+
+cube_dof = model.jnt_dofadr[
+    cube_joint
+]
 
 
 # =========================================================
@@ -237,64 +290,108 @@ cube_dof = model.jnt_dofadr[cube_joint]
 
 def randomize_cube():
 
-    x = random.uniform(0.25, 0.55)
-    y = random.uniform(-0.30, 0.30)
+    x = random.uniform(
+        CUBE_X_MIN,
+        CUBE_X_MAX
+    )
 
-    data.qpos[cube_qpos + 0] = x
-    data.qpos[cube_qpos + 1] = y
-    data.qpos[cube_qpos + 2] = 0.06
+    y = random.uniform(
+        CUBE_Y_MIN,
+        CUBE_Y_MAX
+    )
 
-    # Quaternion
-    data.qpos[cube_qpos + 3] = 1.0
-    data.qpos[cube_qpos + 4] = 0.0
-    data.qpos[cube_qpos + 5] = 0.0
-    data.qpos[cube_qpos + 6] = 0.0
+
+    data.qpos[
+        cube_qpos + 0
+    ] = x
+
+    data.qpos[
+        cube_qpos + 1
+    ] = y
+
+    data.qpos[
+        cube_qpos + 2
+    ] = CUBE_Z
+
+
+    # quaternion
+    data.qpos[
+        cube_qpos + 3
+    ] = 1.0
+
+    data.qpos[
+        cube_qpos + 4
+    ] = 0.0
+
+    data.qpos[
+        cube_qpos + 5
+    ] = 0.0
+
+    data.qpos[
+        cube_qpos + 6
+    ] = 0.0
+
+
+    # zero cube velocity
 
     data.qvel[
         cube_dof:cube_dof + 6
     ] = 0.0
 
-    mujoco.mj_forward(model, data)
 
     print(
         f"Cube position: "
         f"x={x:.3f}, "
         f"y={y:.3f}, "
-        f"z=0.060"
+        f"z={CUBE_Z:.3f}"
     )
 
+
+# =========================================================
+# SET INITIAL ARM POSE
+# =========================================================
+
+# Put the arm directly into the desired pose.
+# There is NO movement toward this pose.
+
+data.qpos[
+    qpos_addr
+] = START_Q
+
+
+# Zero arm velocities
+
+data.qvel[
+    dof_addr
+] = 0.0
+
+
+# Randomize cube BEFORE forward kinematics
 
 randomize_cube()
 
 
 # =========================================================
-# INITIAL JOINT TARGETS
-# =========================================================
-
-joint_targets = data.qpos[
-    qpos_addr
-].copy()
-
-home_q = joint_targets.copy()
-
-
-# =========================================================
-# VERY IMPORTANT:
-# INITIALIZE THE ACTUATORS TO CURRENT POSITION
+# SET ACTUATOR TARGETS
 # =========================================================
 
 for i in range(6):
 
     data.ctrl[
         arm_actuators[i]
-    ] = joint_targets[i]
+    ] = START_Q[i]
 
 
-# Open gripper initially
+# Gripper open
+
 data.ctrl[
     gripper_actuator
 ] = GRIPPER_OPEN
 
+
+# =========================================================
+# FORWARD KINEMATICS
+# =========================================================
 
 mujoco.mj_forward(
     model,
@@ -303,19 +400,33 @@ mujoco.mj_forward(
 
 
 # =========================================================
-# RED DOT TARGET
+# HOME POSTURE
+# =========================================================
+
+home_q = START_Q.copy()
+
+joint_targets = START_Q.copy()
+
+
+# =========================================================
+# INITIAL RED TARGET
 # =========================================================
 
 target_position = data.site_xpos[
     pinch_site
 ].copy()
 
+
+# Keep the starting orientation fixed
+
 target_rotation = data.site_xmat[
     pinch_site
 ].reshape(3, 3).copy()
 
+
+print()
 print(
-    "Initial red-dot position:",
+    "Initial gripper position:",
     target_position
 )
 
@@ -325,7 +436,9 @@ print(
 # =========================================================
 
 pygame.init()
+
 pygame.joystick.init()
+
 
 if pygame.joystick.get_count() == 0:
 
@@ -337,7 +450,9 @@ if pygame.joystick.get_count() == 0:
 
 
 joystick = pygame.joystick.Joystick(0)
+
 joystick.init()
+
 
 print()
 print(
@@ -362,20 +477,22 @@ print(
 
 
 # =========================================================
-# IK
+# IK FUNCTION
 # =========================================================
 
 def calculate_ik(dt):
 
     global joint_targets
 
+
     # =====================================================
-    # CURRENT END-EFFECTOR STATE
+    # CURRENT END EFFECTOR
     # =====================================================
 
     current_position = data.site_xpos[
         pinch_site
     ].copy()
+
 
     current_rotation = data.site_xmat[
         pinch_site
@@ -387,71 +504,81 @@ def calculate_ik(dt):
     # =====================================================
 
     position_error = (
+
         target_position
-        - current_position
+        -
+        current_position
+
     )
 
 
     # =====================================================
     # ORIENTATION ERROR
-    #
-    # Keep gripper orientation fixed to its startup
-    # orientation instead of letting IK freely rotate it.
     # =====================================================
 
     orientation_error = 0.5 * (
+
         np.cross(
             current_rotation[:, 0],
             target_rotation[:, 0]
         )
+
         +
+
         np.cross(
             current_rotation[:, 1],
             target_rotation[:, 1]
         )
+
         +
+
         np.cross(
             current_rotation[:, 2],
             target_rotation[:, 2]
         )
+
     )
 
 
     # =====================================================
-    # TASK GAINS
+    # CARTESIAN VELOCITY
     # =====================================================
 
-    POSITION_GAIN = 5.0
-    ORIENTATION_GAIN = 2.0
+    linear_velocity = (
 
+        IK_GAIN
+        *
+        position_error
 
-    desired_linear_velocity = (
-        POSITION_GAIN
-        * position_error
-    )
-
-    desired_angular_velocity = (
-        ORIENTATION_GAIN
-        * orientation_error
     )
 
 
-    # =====================================================
-    # LIMIT CARTESIAN SPEED
-    # =====================================================
+    angular_velocity = (
 
-    max_linear_speed = 0.20
+        2.0
+        *
+        orientation_error
 
-    linear_speed = np.linalg.norm(
-        desired_linear_velocity
     )
 
-    if linear_speed > max_linear_speed:
 
-        desired_linear_velocity *= (
-            max_linear_speed
+    # Limit linear speed
+
+    max_linear_velocity = 0.20
+
+    linear_norm = np.linalg.norm(
+        linear_velocity
+    )
+
+
+    if linear_norm > max_linear_velocity:
+
+        linear_velocity *= (
+
+            max_linear_velocity
             /
-            linear_speed
+            linear_norm
+
         )
 
 
@@ -460,10 +587,12 @@ def calculate_ik(dt):
     # =====================================================
 
     desired_velocity = np.concatenate(
-        (
-            desired_linear_velocity,
-            desired_angular_velocity
-        )
+
+        [
+            linear_velocity,
+            angular_velocity
+        ]
+
     )
 
 
@@ -479,58 +608,69 @@ def calculate_ik(dt):
         (3, model.nv)
     )
 
+
     mujoco.mj_jacSite(
+
         model,
         data,
         jacp,
         jacr,
         pinch_site
+
     )
 
 
     J = np.vstack(
-        (
+
+        [
             jacp[:, dof_addr],
             jacr[:, dof_addr]
-        )
+        ]
+
     )
 
 
     # =====================================================
-    # DAMPED PSEUDO-INVERSE
+    # DAMPED PSEUDO INVERSE
     # =====================================================
 
-    lambda_value = 0.08
+    JJt = J @ J.T
+
 
     J_pinv = (
+
         J.T
         @
         np.linalg.inv(
-            J @ J.T
+
+            JJt
+
             +
-            lambda_value
-            * lambda_value
-            * np.eye(6)
+
+            (DAMPING ** 2)
+            *
+            np.eye(6)
+
         )
+
     )
 
 
     # =====================================================
-    # MAIN IK MOTION
+    # TASK MOTION
     # =====================================================
 
     dq_task = (
+
         J_pinv
         @
         desired_velocity
+
     )
 
 
     # =====================================================
-    # NULL-SPACE HOME POSTURE
-    #
-    # This stops the arm from folding into strange
-    # configurations while still allowing X/Y/Z motion.
+    # HOME POSTURE
     # =====================================================
 
     current_q = data.qpos[
@@ -538,27 +678,39 @@ def calculate_ik(dt):
     ].copy()
 
 
-    HOME_GAIN = 0.12
+    HOME_GAIN = 0.15
 
 
     dq_home = (
+
         HOME_GAIN
         *
-        (home_q - current_q)
+        (
+            home_q
+            -
+            current_q
+        )
+
     )
 
 
     null_space = (
+
         np.eye(6)
         -
-        J_pinv @ J
+        J_pinv
+        @
+        J
+
     )
 
 
     dq_null = (
+
         null_space
         @
         dq_home
+
     )
 
 
@@ -567,9 +719,11 @@ def calculate_ik(dt):
     # =====================================================
 
     dq = (
+
         dq_task
         +
         dq_null
+
     )
 
 
@@ -577,23 +731,26 @@ def calculate_ik(dt):
     # JOINT SPEED LIMIT
     # =====================================================
 
-    MAX_JOINT_SPEED = 0.45
-
     dq = np.clip(
+
         dq,
+
         -MAX_JOINT_SPEED,
         MAX_JOINT_SPEED
+
     )
 
 
     # =====================================================
-    # UPDATE JOINT TARGETS
+    # POSITION UPDATE
     # =====================================================
 
-    new_targets = (
+    joint_targets = (
+
         joint_targets
         +
         dq * dt
+
     )
 
 
@@ -601,52 +758,110 @@ def calculate_ik(dt):
     # JOINT LIMITS
     # =====================================================
 
-    for i, jid in enumerate(joint_ids):
+    for i, jid in enumerate(
+        joint_ids
+    ):
 
-        lower = model.jnt_range[
+        low = model.jnt_range[
             jid,
             0
         ]
 
-        upper = model.jnt_range[
+        high = model.jnt_range[
             jid,
             1
         ]
 
-        new_targets[i] = clamp(
-            new_targets[i],
-            lower,
-            upper
+
+        joint_targets[i] = clamp(
+
+            joint_targets[i],
+            low,
+            high
+
         )
 
 
-    joint_targets = new_targets
+# =========================================================
+# DRAW RED TARGET
+# =========================================================
+
+def draw_target_dot(viewer):
+
+    viewer.user_scn.ngeom = 1
+
+    geom = viewer.user_scn.geoms[0]
+
+
+    mujoco.mjv_initGeom(
+
+        geom,
+
+        mujoco.mjtGeom.mjGEOM_SPHERE,
+
+        np.array([
+            0.022,
+            0.022,
+            0.022
+        ]),
+
+        target_position,
+
+        np.eye(3).flatten(),
+
+        np.array([
+            1.0,
+            0.0,
+            0.0,
+            1.0
+        ])
+
+    )
 
 
 # =========================================================
-# CAMERA FOLLOW
+# CAMERA
 # =========================================================
 
 def update_camera(viewer):
 
-    gripper_pos = data.site_xpos[
+    gripper_position = data.site_xpos[
         pinch_site
     ].copy()
 
-    cube_pos = data.xpos[
+
+    cube_position = data.xpos[
         cube_body
     ].copy()
 
+
     focus = (
-        0.70 * gripper_pos
+
+        0.70
+        *
+        gripper_position
+
         +
-        0.30 * cube_pos
+
+        0.30
+        *
+        cube_position
+
     )
 
+
     viewer.cam.lookat[:] = (
-        0.94 * viewer.cam.lookat
+
+        0.95
+        *
+        viewer.cam.lookat
+
         +
-        0.06 * focus
+
+        0.05
+        *
+        focus
+
     )
 
 
@@ -659,64 +874,100 @@ with mujoco.viewer.launch_passive(
     data
 ) as viewer:
 
-    # Make all site groups visible
-    viewer.opt.sitegroup[:] = 1
 
     viewer.cam.type = (
         mujoco.mjtCamera.mjCAMERA_FREE
     )
 
     viewer.cam.distance = 0.90
+
     viewer.cam.azimuth = 135
+
     viewer.cam.elevation = -25
 
-    # Make the initial camera target the robot
-    viewer.cam.lookat[:] = data.site_xpos[
-        pinch_site
-    ]
+    viewer.cam.lookat[:] = (
+        target_position
+    )
+
 
     print()
-    print("======================================")
-    print("IK TELEOPERATION")
-    print("======================================")
+    print(
+        "======================================"
+    )
+
+    print(
+        "IK TELEOPERATION READY"
+    )
+
+    print(
+        "======================================"
+    )
+
+    print(
+        "LEFT STICK X  -> X"
+    )
+
+    print(
+        "LEFT STICK Y  -> Y"
+    )
+
+    print(
+        "RIGHT STICK Y -> Z"
+    )
+
     print()
-    print("LEFT STICK X  -> X")
-    print("LEFT STICK Y  -> Y")
-    print("RIGHT STICK Y -> Z")
+
+    print(
+        "BUTTON 0 -> CLOSE GRIPPER"
+    )
+
+    print(
+        "BUTTON 1 -> OPEN GRIPPER"
+    )
+
     print()
-    print("BUTTON 0 -> CLOSE GRIPPER")
-    print("BUTTON 1 -> OPEN GRIPPER")
-    print()
-    print("RED SPHERE = GRIPPER CONTROL POINT")
-    print("======================================")
-    print()
+
+    print(
+        "RED DOT = TARGET POSITION"
+    )
+
+    print(
+        "======================================"
+    )
+
+
+    # =====================================================
+    # IMPORTANT:
+    # PHYSICS IS NOT STARTED YET
+    # =====================================================
+
+    simulation_started = False
 
     last_time = time.perf_counter()
 
+
+    # =====================================================
+    # MAIN LOOP
+    # =====================================================
+
     while viewer.is_running():
 
-        # =================================================
-        # TIME
-        # =================================================
-
-        now = time.perf_counter()
-
-        dt = now - last_time
-
-        last_time = now
-
-        if dt > 0.03:
-            dt = 0.03
-
 
         # =================================================
-        # CONTROLLER
+        # CONTROLLER EVENTS
         # =================================================
 
         pygame.event.pump()
 
+
+        # =================================================
+        # READ CONTROLLER
+        # =================================================
+
         left_x = joystick.get_axis(0)
+
         left_y = joystick.get_axis(1)
+
         right_y = joystick.get_axis(3)
 
 
@@ -725,35 +976,160 @@ with mujoco.viewer.launch_passive(
         # =================================================
 
         if abs(left_x) < DEADZONE:
+
             left_x = 0.0
 
+
         if abs(left_y) < DEADZONE:
+
             left_y = 0.0
 
+
         if abs(right_y) < DEADZONE:
+
             right_y = 0.0
 
 
         # =================================================
-        # MOVE RED-DOT TARGET
+        # DETECT REAL INPUT
+        # =================================================
+
+        controller_input = (
+
+            abs(left_x) > DEADZONE
+
+            or
+
+            abs(left_y) > DEADZONE
+
+            or
+
+            abs(right_y) > DEADZONE
+
+            or
+
+            joystick.get_button(0)
+
+            or
+
+            joystick.get_button(1)
+
+        )
+
+
+        if controller_input:
+
+            simulation_started = True
+
+
+        # =================================================
+        # DRAW RED DOT
+        # =================================================
+
+        draw_target_dot(
+            viewer
+        )
+
+
+        # =================================================
+        # BEFORE FIRST INPUT
+        # =================================================
+
+        if not simulation_started:
+
+            # Keep exact starting pose
+
+            data.qpos[
+                qpos_addr
+            ] = START_Q
+
+            data.qvel[
+                dof_addr
+            ] = 0.0
+
+
+            for i in range(6):
+
+                data.ctrl[
+                    arm_actuators[i]
+                ] = START_Q[i]
+
+
+            data.ctrl[
+                gripper_actuator
+            ] = GRIPPER_OPEN
+
+
+            # Recalculate positions
+            # WITHOUT ADVANCING PHYSICS
+
+            mujoco.mj_forward(
+                model,
+                data
+            )
+
+
+            viewer.sync()
+
+            time.sleep(0.01)
+
+            continue
+
+
+        # =================================================
+        # REAL DT
+        # =================================================
+
+        now = time.perf_counter()
+
+        dt = (
+            now
+            -
+            last_time
+        )
+
+        last_time = now
+
+
+        if dt > 0.03:
+
+            dt = 0.03
+
+
+        # =================================================
+        # MOVE RED TARGET
         # =================================================
 
         target_position[0] += (
+
             left_x
-            * TARGET_SPEED
-            * dt
+            *
+            TARGET_SPEED
+            *
+            dt
+
         )
+
 
         target_position[1] += (
+
             -left_y
-            * TARGET_SPEED
-            * dt
+            *
+            TARGET_SPEED
+            *
+            dt
+
         )
 
+
         target_position[2] += (
+
             -right_y
-            * TARGET_SPEED
-            * dt
+            *
+            TARGET_SPEED
+            *
+            dt
+
         )
 
 
@@ -762,21 +1138,32 @@ with mujoco.viewer.launch_passive(
         # =================================================
 
         target_position[0] = clamp(
+
             target_position[0],
+
             0.15,
             0.70
+
         )
+
 
         target_position[1] = clamp(
+
             target_position[1],
+
             -0.55,
             0.55
+
         )
 
+
         target_position[2] = clamp(
+
             target_position[2],
+
             0.12,
             0.85
+
         )
 
 
@@ -788,7 +1175,7 @@ with mujoco.viewer.launch_passive(
 
 
         # =================================================
-        # SEND JOINT TARGETS
+        # SEND ARM TARGETS
         # =================================================
 
         for i in range(6):
@@ -817,7 +1204,7 @@ with mujoco.viewer.launch_passive(
 
 
         # =================================================
-        # STEP
+        # STEP PHYSICS
         # =================================================
 
         mujoco.mj_step(
@@ -830,7 +1217,9 @@ with mujoco.viewer.launch_passive(
         # CAMERA
         # =================================================
 
-        update_camera(viewer)
+        update_camera(
+            viewer
+        )
 
 
         # =================================================
