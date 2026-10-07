@@ -18,7 +18,7 @@ MODEL_PATH = r"C:\mujoco_menagerie\universal_robots_ur5e\vla_scene.xml"
 # =========================================================
 
 # Speed of the RED TARGET DOT
-TARGET_SPEED = 0.06       # meters / second
+TARGET_SPEED = 0.12       # meters / second
 
 # IK response
 IK_GAIN = 5.0
@@ -27,7 +27,7 @@ IK_GAIN = 5.0
 DAMPING = 0.06
 
 # Maximum joint speed
-MAX_JOINT_SPEED = 0.35   # rad / second
+MAX_JOINT_SPEED = 0.65   # rad / second
 
 # Joystick deadzone
 DEADZONE = 0.06
@@ -403,8 +403,6 @@ mujoco.mj_forward(
 # HOME POSTURE
 # =========================================================
 
-home_q = START_Q.copy()
-
 joint_targets = START_Q.copy()
 
 
@@ -670,61 +668,10 @@ def calculate_ik(dt):
 
 
     # =====================================================
-    # HOME POSTURE
-    # =====================================================
-
-    current_q = data.qpos[
-        qpos_addr
-    ].copy()
-
-
-    HOME_GAIN = 0.15
-
-
-    dq_home = (
-
-        HOME_GAIN
-        *
-        (
-            home_q
-            -
-            current_q
-        )
-
-    )
-
-
-    null_space = (
-
-        np.eye(6)
-        -
-        J_pinv
-        @
-        J
-
-    )
-
-
-    dq_null = (
-
-        null_space
-        @
-        dq_home
-
-    )
-
-
-    # =====================================================
     # FINAL JOINT VELOCITY
     # =====================================================
 
-    dq = (
-
-        dq_task
-        +
-        dq_null
-
-    )
+    dq = dq_task
 
 
     # =====================================================
@@ -800,9 +747,9 @@ def draw_target_dot(viewer):
         mujoco.mjtGeom.mjGEOM_SPHERE,
 
         np.array([
-            0.022,
-            0.022,
-            0.022
+            0.01,
+            0.01,
+            0.01
         ]),
 
         target_position,
@@ -957,6 +904,8 @@ with mujoco.viewer.launch_passive(
         # CONTROLLER EVENTS
         # =================================================
 
+        now = time.perf_counter()
+
         pygame.event.pump()
 
 
@@ -1072,6 +1021,7 @@ with mujoco.viewer.launch_passive(
             viewer.sync()
 
             time.sleep(0.01)
+            last_time = time.perf_counter()
 
             continue
 
@@ -1079,8 +1029,6 @@ with mujoco.viewer.launch_passive(
         # =================================================
         # REAL DT
         # =================================================
-
-        now = time.perf_counter()
 
         dt = (
             now
@@ -1141,7 +1089,7 @@ with mujoco.viewer.launch_passive(
 
             target_position[0],
 
-            0.15,
+            -0.70,
             0.70
 
         )
@@ -1161,7 +1109,7 @@ with mujoco.viewer.launch_passive(
 
             target_position[2],
 
-            0.12,
+            0.03,
             0.85
 
         )
